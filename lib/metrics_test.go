@@ -13,6 +13,7 @@ func TestNewMetrics(t *testing.T) {
 		&Result{200, time.Unix(1, 0), 20 * time.Millisecond, 20, 20, "", "GET"},
 		&Result{200, time.Unix(2, 0), 30 * time.Millisecond, 30, 10, "", "POST"},
 	})
+	getOnly := m.ByMethod["GET"]
 
 	for field, values := range map[string][]float64{
 		"BytesIn.Mean":  []float64{m.BytesIn.Mean, 20.0},
@@ -24,7 +25,6 @@ func TestNewMetrics(t *testing.T) {
 		}
 	}
 
-	getOnly := m.ByMethod["GET"]
 	for field, values := range map[string][]float64{
 		"BytesIn.Mean":  []float64{getOnly.BytesIn.Mean, 25.0},
 		"BytesOut.Mean": []float64{getOnly.BytesOut.Mean, 15.0},
