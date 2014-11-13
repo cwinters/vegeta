@@ -23,18 +23,30 @@ func (f ReporterFunc) Report(r Results) ([]byte, error) { return f(r) }
 
 // ReportText returns a computed Metrics struct as aligned, formatted text.
 var ReportText ReporterFunc = func(r Results) ([]byte, error) {
-	m := NewMetrics(r)
+	allMetrics := NewMetrics(r)
 	out := &bytes.Buffer{}
 
 	w := tabwriter.NewWriter(out, 0, 8, 2, '\t', tabwriter.StripEscape)
-	fmt.Fprintf(w, "Requests\t[total]\t%d\n", m.Requests)
-	fmt.Fprintf(w, "Duration\t[total, attack, wait]\t%s, %s, %s\n", m.Duration+m.Wait, m.Duration, m.Wait)
-	fmt.Fprintf(w, "Latencies\t[mean, 50, 95, 99, max]\t%s, %s, %s, %s, %s\n",
-		m.Latencies.Mean, m.Latencies.P50, m.Latencies.P95, m.Latencies.P99, m.Latencies.Max)
-	fmt.Fprintf(w, "Bytes In\t[total, mean]\t%d, %.2f\n", m.BytesIn.Total, m.BytesIn.Mean)
-	fmt.Fprintf(w, "Bytes Out\t[total, mean]\t%d, %.2f\n", m.BytesOut.Total, m.BytesOut.Mean)
-	fmt.Fprintf(w, "Success\t[ratio]\t%.2f%%\n", m.Success*100)
-	fmt.Fprintf(w, "Status Codes\t[code:count]\t")
+	metricsToText(allMetrics, w, "ALL")
+	for method, methodMetrics := range allMetrics.ByMethod {
+		metricsToText(methodMetrics, w, method)
+	}
+	if err := w.Flush(); err != nil {
+		return []byte{}, err
+	}
+	return out.Bytes(), nil
+}
+
+func metricsToText(m *Metrics, w *tabwriter.Writer, label string) {
+	latencyLabels := "[mean, 50, 95, 99, max]"
+	fmt.Fprintf(w, "Requests (%s)\t[total]\t%d\n", label, m.Requests)
+	fmt.Fprintf(w, "Duration (%s)\t[total, attack, wait]\t%s, %s, %s\n", label, m.Duration+m.Wait, m.Duration, m.Wait)
+	fmt.Fprintf(w, "Latencies (%s)\t%s\t%s, %s, %s, %s, %s\n",
+		label, latencyLabels, m.Latencies.Mean, m.Latencies.P50, m.Latencies.P95, m.Latencies.P99, m.Latencies.Max)
+	fmt.Fprintf(w, "Bytes In (%s)\t[total, mean]\t%d, %.2f\n", label, m.BytesIn.Total, m.BytesIn.Mean)
+	fmt.Fprintf(w, "Bytes Out (%s)\t[total, mean]\t%d, %.2f\n", label, m.BytesOut.Total, m.BytesOut.Mean)
+	fmt.Fprintf(w, "Success (%s)\t[ratio]\t%.2f%%\n", label, m.Success*100)
+	fmt.Fprintf(w, "Status Codes (%s)\t[code:count]\t", label)
 	for code, count := range m.StatusCodes {
 		fmt.Fprintf(w, "%s:%d  ", code, count)
 	}
@@ -43,10 +55,6 @@ var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 		fmt.Fprintln(w, err)
 	}
 
-	if err := w.Flush(); err != nil {
-		return []byte{}, err
-	}
-	return out.Bytes(), nil
 }
 
 // ReportJSON writes a computed Metrics struct to as JSON
