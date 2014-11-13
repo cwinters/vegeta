@@ -99,6 +99,9 @@ func (m *Metrics) Complete() {
 	for err := range m.errorSet {
 		m.Errors = append(m.Errors, err)
 	}
+	for _, metrics := range m.ByMethod {
+		metrics.Complete()
+	}
 }
 
 // NewMetrics computes and returns a Metrics struct out of a slice of Results.

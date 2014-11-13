@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -170,7 +171,7 @@ func (a *Attacker) hit(tr Targeter, tm time.Time) *Result {
 		return &res
 	}
 
-	res.Method = tgt.Method
+	res.Method = strings.ToUpper(tgt.Method)
 	req, err := tgt.Request()
 	if err != nil {
 		res.Error = err.Error()
