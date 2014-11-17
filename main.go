@@ -12,6 +12,7 @@ func main() {
 	commands := map[string]command{
 		"attack": attackCmd(),
 		"report": reportCmd(),
+		"user":   usersCmd(),
 	}
 
 	flag.Usage = func() {
@@ -47,6 +48,7 @@ examples:
   echo "GET http://localhost/" | vegeta attack -duration=5s | tee results.bin | vegeta report
   vegeta attack -targets=targets.txt > results.bin
   vegeta report -inputs=results.bin -reporter=json > metrics.json
+  vegeta users -targetdir=users/ > user_results.bin
   cat results.bin | vegeta report -reporter=plot > plot.html
 `
 

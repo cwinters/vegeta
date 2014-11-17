@@ -93,59 +93,62 @@ func NewLazyTargeter(src io.Reader, body []byte, hdr http.Header) Targeter {
 	return func() (*Target, error) {
 		mu.Lock()
 		defer mu.Unlock()
+		return TargetFromScanner(sc, body, hdr)
+	}
+}
 
-		if !sc.Scan() {
-			return nil, ErrNoTargets
-		}
-		tgt := Target{Body: body, Header: http.Header{}}
-		for k, vs := range hdr {
-			tgt.Header[k] = vs
-		}
-		line := strings.TrimSpace(sc.Text())
-		tokens := strings.SplitN(line, " ", 2)
-		if len(tokens) < 2 {
-			return nil, fmt.Errorf("bad target: %s", line)
-		}
-		switch tokens[0] {
-		case "HEAD", "GET", "PUT", "POST", "PATCH", "OPTIONS":
-			tgt.Method = tokens[0]
-		default:
-			return nil, fmt.Errorf("bad method: %s", tokens[0])
-		}
-		if _, err := url.ParseRequestURI(tokens[1]); err != nil {
-			return nil, fmt.Errorf("bad URL: %s", tokens[1])
-		}
-		tgt.URL = tokens[1]
-		line = strings.TrimSpace(sc.Peek())
-		if line == "" || startsWithHTTPMethod(line) {
-			return &tgt, nil
-		}
-		for sc.Scan() {
-			if line = strings.TrimSpace(sc.Text()); line == "" {
-				break
-			} else if strings.HasPrefix(line, "@") {
-				var err error
-				if tgt.Body, err = ioutil.ReadFile(line[1:]); err != nil {
-					return nil, fmt.Errorf("bad body: %s", err)
-				}
-				break
-			}
-			tokens = strings.SplitN(line, ":", 2)
-			if len(tokens) < 2 {
-				return nil, fmt.Errorf("bad header: %s", line)
-			}
-			for i := range tokens {
-				if tokens[i] = strings.TrimSpace(tokens[i]); tokens[i] == "" {
-					return nil, fmt.Errorf("bad header: %s", line)
-				}
-			}
-			tgt.Header.Add(tokens[0], tokens[1])
-		}
-		if err := sc.Err(); err != nil {
-			return nil, ErrNoTargets
-		}
+func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header) (*Target, error) {
+	if !sc.Scan() {
+		return nil, ErrNoTargets
+	}
+	tgt := Target{Body: body, Header: http.Header{}}
+	for k, vs := range hdr {
+		tgt.Header[k] = vs
+	}
+	line := strings.TrimSpace(sc.Text())
+	tokens := strings.SplitN(line, " ", 2)
+	if len(tokens) < 2 {
+		return nil, fmt.Errorf("bad target: %s", line)
+	}
+	switch tokens[0] {
+	case "HEAD", "GET", "PUT", "POST", "PATCH", "OPTIONS":
+		tgt.Method = tokens[0]
+	default:
+		return nil, fmt.Errorf("bad method: %s", tokens[0])
+	}
+	if _, err := url.ParseRequestURI(tokens[1]); err != nil {
+		return nil, fmt.Errorf("bad URL: %s", tokens[1])
+	}
+	tgt.URL = tokens[1]
+	line = strings.TrimSpace(sc.Peek())
+	if line == "" || startsWithHTTPMethod(line) {
 		return &tgt, nil
 	}
+	for sc.Scan() {
+		if line = strings.TrimSpace(sc.Text()); line == "" {
+			break
+		} else if strings.HasPrefix(line, "@") {
+			var err error
+			if tgt.Body, err = ioutil.ReadFile(line[1:]); err != nil {
+				return nil, fmt.Errorf("bad body: %s", err)
+			}
+			break
+		}
+		tokens = strings.SplitN(line, ":", 2)
+		if len(tokens) < 2 {
+			return nil, fmt.Errorf("bad header: %s", line)
+		}
+		for i := range tokens {
+			if tokens[i] = strings.TrimSpace(tokens[i]); tokens[i] == "" {
+				return nil, fmt.Errorf("bad header: %s", line)
+			}
+		}
+		tgt.Header.Add(tokens[0], tokens[1])
+	}
+	if err := sc.Err(); err != nil {
+		return nil, ErrNoTargets
+	}
+	return &tgt, nil
 }
 
 var httpMethodChecker = regexp.MustCompile("^(HEAD|GET|PUT|POST|PATCH|OPTIONS) ")
