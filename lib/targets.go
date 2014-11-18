@@ -133,7 +133,7 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name str
 	tgt.URL = tokens[1]
 	line = strings.TrimSpace(sc.Peek())
 	if line == "" || startsWithHTTPMethod(line) {
-		fmt.Fprintf(os.Stderr, "%s: Returning Target %#v\n", name, tgt)
+		fmt.Fprintf(os.Stderr, "%s: Returning Target %s\n", name, tgt.URL)
 		return &tgt, nil
 	}
 	for sc.Scan() {
@@ -160,7 +160,7 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name str
 	if err := sc.Err(); err != nil {
 		return nil, ErrNoTargets
 	}
-	fmt.Fprintf(os.Stderr, "%s: Returning Target %#v\n", name, tgt)
+	fmt.Fprintf(os.Stderr, "%s: Returning Target %s\n", name, tgt.URL)
 	return &tgt, nil
 }
 
