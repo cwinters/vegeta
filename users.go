@@ -20,7 +20,7 @@ func usersCmd() command {
 	opts := &usersOpts{
 		laddr: localAddr{&vegeta.DefaultLocalAddr},
 	}
-	fs.StringVar(&opts.usersd, "users", "", "Directory with user scripts (in *.txt)")
+	fs.StringVar(&opts.usersd, "users", "", "Directory with user scripts, each one with .txt extension")
 	fs.StringVar(&opts.outputf, "output", "stdout", "Output file")
 	fs.StringVar(&opts.certf, "cert", "", "x509 Certificate file")
 	fs.IntVar(&opts.redirects, "redirects", vegeta.DefaultRedirects, "Number of redirects to follow")
@@ -32,15 +32,14 @@ func usersCmd() command {
 	}}
 }
 
-// attackOpts aggregates the attack function command options
 type usersOpts struct {
-	usersd    string
-	outputf   string
 	certf     string
-	timeout   time.Duration
-	redirects int
-	laddr     localAddr
 	keepalive bool
+	laddr     localAddr
+	outputf   string
+	redirects int
+	timeout   time.Duration
+	usersd    string
 }
 
 func users(opts *usersOpts) error {
@@ -80,6 +79,8 @@ func users(opts *usersOpts) error {
 		return fmt.Errorf("error reading user files %s: %s", opts.usersd, err)
 	}
 
+	fmt.Fprintf(os.Stderr, "Found %d files with scripts\n", len(userFiles))
+
 	var users []*vegeta.User
 	for _, userFile := range userFiles {
 		reader, err := file(userFile, false)
@@ -89,41 +90,49 @@ func users(opts *usersOpts) error {
 		users = append(users, vegeta.NewUser(userFile, reader, userOptions))
 	}
 
+	fmt.Fprintf(os.Stderr, "Created %d user objects\n", len(users))
+
 	var wg sync.WaitGroup
+
+	// for now we're just streaming all the results to one place; maybe later we
+	// can attach a session or something to pull them apart later? (For example,
+	// you might want to find the sessions with the highest variance and do
+	// reporting on them...)
 	var results = make(chan *vegeta.Result)
-	for _, user := range users {
+	for idx, user := range users {
 		wg.Add(1)
+		fmt.Fprintf(os.Stderr, "Firing goroutine for user %d: %s\n", idx, user.Name)
 		go func(user *vegeta.User) {
 			user.Run(results)
 			defer wg.Done()
 		}(user)
 	}
 
-	var done = make(chan struct{}, 1)
+	var done = make(chan os.Signal, 1)
 	go func() {
+		fmt.Fprintln(os.Stderr, "Waiting on user wait group...")
 		wg.Wait()
-		close(done)
+		done <- os.Interrupt
 	}()
 
 	enc := gob.NewEncoder(out)
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	signal.Notify(done, os.Interrupt)
 
+	// TODO: add a timeout clause?
 	for {
 		select {
-		case <-sig:
-			for _, user := range users {
-				user.Stop()
-			}
-			return nil
 		case r, ok := <-results:
 			if !ok {
 				return nil
 			}
+			fmt.Fprintln(os.Stderr, "Encoding result...")
 			if err = enc.Encode(r); err != nil {
 				return err
 			}
 		case <-done:
+			for _, user := range users {
+				user.Stop()
+			}
 			return nil
 		}
 	}

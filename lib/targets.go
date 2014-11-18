@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -93,12 +94,21 @@ func NewLazyTargeter(src io.Reader, body []byte, hdr http.Header) Targeter {
 	return func() (*Target, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		return TargetFromScanner(sc, body, hdr)
+		return TargetFromScanner(sc, body, hdr, "lazy")
 	}
 }
 
-func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header) (*Target, error) {
+var (
+	httpMethod = regexp.MustCompile("^(HEAD|GET|PUT|POST|PATCH|OPTIONS) ")
+)
+
+func startsWithHTTPMethod(t string) bool {
+	return httpMethod.MatchString(t)
+}
+
+func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name string) (*Target, error) {
 	if !sc.Scan() {
+		fmt.Fprintf(os.Stderr, "%s: no more targets, scan returned false...\n", name)
 		return nil, ErrNoTargets
 	}
 	tgt := Target{Body: body, Header: http.Header{}}
@@ -106,9 +116,10 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header) (*Target
 		tgt.Header[k] = vs
 	}
 	line := strings.TrimSpace(sc.Text())
+	fmt.Fprintf(os.Stderr, "%s: Scanned first line %s\n", name, line)
 	tokens := strings.SplitN(line, " ", 2)
 	if len(tokens) < 2 {
-		return nil, fmt.Errorf("bad target: %s", line)
+		return nil, fmt.Errorf("%s: bad target: %s", name, line)
 	}
 	switch tokens[0] {
 	case "HEAD", "GET", "PUT", "POST", "PATCH", "OPTIONS":
@@ -122,6 +133,7 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header) (*Target
 	tgt.URL = tokens[1]
 	line = strings.TrimSpace(sc.Peek())
 	if line == "" || startsWithHTTPMethod(line) {
+		fmt.Fprintf(os.Stderr, "%s: Returning Target %#v\n", name, tgt)
 		return &tgt, nil
 	}
 	for sc.Scan() {
@@ -148,13 +160,8 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header) (*Target
 	if err := sc.Err(); err != nil {
 		return nil, ErrNoTargets
 	}
+	fmt.Fprintf(os.Stderr, "%s: Returning Target %#v\n", name, tgt)
 	return &tgt, nil
-}
-
-var httpMethodChecker = regexp.MustCompile("^(HEAD|GET|PUT|POST|PATCH|OPTIONS) ")
-
-func startsWithHTTPMethod(t string) bool {
-	return httpMethodChecker.MatchString(t)
 }
 
 // Wrap a Scanner so we can cheat and look at the next value and react accordingly,

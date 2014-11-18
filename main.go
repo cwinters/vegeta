@@ -12,7 +12,7 @@ func main() {
 	commands := map[string]command{
 		"attack": attackCmd(),
 		"report": reportCmd(),
-		"user":   usersCmd(),
+		"users":  usersCmd(),
 	}
 
 	flag.Usage = func() {
