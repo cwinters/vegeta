@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 )
@@ -167,19 +166,17 @@ func (a *Attacker) hit(tr Targeter, tm time.Time) *Result {
 
 	tgt, err := tr()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Got error executing targeter => %s", err)
 		res.Error = err.Error()
 		return &res
-	} else {
-		fmt.Fprintf(os.Stderr, "Executed targeter => [Target: %s]\n", tgt.URL)
 	}
+	res.URL = tgt.URL
+	res.Method = tgt.Method
 
 	req, err := tgt.Request()
 	if err != nil {
 		res.Error = err.Error()
 		return &res
 	}
-
 	r, err := a.client.Do(req)
 	if err != nil {
 		res.Error = err.Error()

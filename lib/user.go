@@ -2,10 +2,12 @@ package vegeta
 
 import (
 	"bufio"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ type User struct {
 	attacker *Attacker
 	scanner  peekingScanner
 	stopper  chan struct{}
+	running  bool
 }
 
 func NewUser(name string, in io.Reader, opts []func(*Attacker)) *User {
@@ -33,16 +36,62 @@ func NewUser(name string, in io.Reader, opts []func(*Attacker)) *User {
 	}
 }
 
-func (user *User) Run(results chan<- *Result) {
-	go user.createTargeters(results)
-	select {
-	case <-user.stopper:
-		return
+type UserEncoder struct {
+	Name        string
+	encoderFile io.WriteCloser
+	encoder     *gob.Encoder
+}
+
+func NewUserEncoder(name string) *UserEncoder {
+	encoderDir := path.Dir(name)
+	encoderName := strings.Replace(path.Base(name), ".txt", ".bin", -1)
+	encoderFullPath := path.Join(encoderDir, encoderName)
+	if encoderFile, err := os.Create(encoderFullPath); err != nil {
+		panic(fmt.Sprintf("Cannot create encoder for results [Path: %s] [User file: %s] => %s", encoderFullPath, name, err))
+	} else {
+		encoder := gob.NewEncoder(encoderFile)
+		return &UserEncoder{encoderName, encoderFile, encoder}
+	}
+}
+
+func (e *UserEncoder) AddResult(r *Result) error {
+	return e.encoder.Encode(r)
+}
+
+func (e *UserEncoder) Close() {
+	e.encoderFile.Close()
+}
+
+func (user *User) Run() {
+	user.running = true
+	enc := NewUserEncoder(user.Name)
+	results := make(chan *Result)
+	go user.process(results)
+	for {
+		select {
+		case result := <-results:
+			enc.AddResult(result)
+
+		// wait for the next result (or timeout) then wrap up:
+		case <-user.stopper:
+			user.running = false
+			fmt.Fprintf(os.Stderr, "%s: All done or asked to stop, waiting for next result or 5 seconds...\n", user.Name)
+			select {
+			case result := <-results:
+				enc.AddResult(result)
+			case <-time.After(5 * time.Second):
+			}
+			enc.Close()
+			fmt.Fprintf(os.Stderr, "%s: ...DONE\n", user.Name)
+			return
+		}
 	}
 }
 
 func (user *User) Stop() {
-	user.stopper <- struct{}{}
+	if user.running {
+		user.stopper <- struct{}{}
+	}
 }
 
 var (
@@ -96,9 +145,8 @@ var pauseChecker = regexp.MustCompile("^=> PAUSE (\\d+)$")
 var emptyBody []byte
 var emptyHeaders http.Header
 
-func (user *User) createTargeters(results chan<- *Result) {
+func (user *User) process(results chan *Result) {
 	textTargets := ScanTargetsToChunks(user.scanner)
-	fmt.Fprintf(os.Stderr, "%s: Chunked file into %d targets\n", user.Name, len(textTargets))
 	for idx, chunk := range textTargets {
 		label := fmt.Sprintf("%s (%d/%d)", user.Name, idx, len(textTargets))
 		if matches := pauseChecker.FindStringSubmatch(chunk); matches != nil {
@@ -107,25 +155,23 @@ func (user *User) createTargeters(results chan<- *Result) {
 				fmt.Fprintf(os.Stderr, "%s: ERROR, bad PAUSE target %s\n", label, chunk)
 				return
 			}
-			fmt.Fprintf(os.Stderr, "%s: Sleeping for %d ms...\n", label, millis)
+			fmt.Fprintf(os.Stderr, "%s: Sleeping (%d ms)...\n", label, millis)
 			select {
 			case <-user.stopper:
 				return
 			case <-time.After(time.Duration(millis) * time.Millisecond):
 			}
-			fmt.Fprintf(os.Stderr, "%s: ...DONE sleeping\n", label)
 		} else {
 			targeter := func() (*Target, error) {
 				scanner := peekingScanner{src: bufio.NewScanner(strings.NewReader(chunk))}
 				return TargetFromScanner(scanner, emptyBody, emptyHeaders, user.Name)
 			}
 			timestamp := time.Now()
-			results <- user.attacker.hit(targeter, timestamp)
-		}
-		select {
-		case <-user.stopper:
-			break
-		case <-time.After(2 * time.Second):
+			result := user.attacker.hit(targeter, timestamp)
+			fmt.Fprintf(os.Stderr, "%s: %s %s, %d ms\n",
+				label, result.Method, result.URL, int64(result.Latency/time.Millisecond))
+			results <- result
 		}
 	}
+	user.stopper <- struct{}{}
 }

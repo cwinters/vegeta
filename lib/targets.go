@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -108,7 +107,6 @@ func startsWithHTTPMethod(t string) bool {
 
 func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name string) (*Target, error) {
 	if !sc.Scan() {
-		fmt.Fprintf(os.Stderr, "%s: no more targets, scan returned false...\n", name)
 		return nil, ErrNoTargets
 	}
 	tgt := Target{Body: body, Header: http.Header{}}
@@ -116,7 +114,6 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name str
 		tgt.Header[k] = vs
 	}
 	line := strings.TrimSpace(sc.Text())
-	fmt.Fprintf(os.Stderr, "%s: Scanned first line %s\n", name, line)
 	tokens := strings.SplitN(line, " ", 2)
 	if len(tokens) < 2 {
 		return nil, fmt.Errorf("%s: bad target: %s", name, line)
@@ -133,7 +130,6 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name str
 	tgt.URL = tokens[1]
 	line = strings.TrimSpace(sc.Peek())
 	if line == "" || startsWithHTTPMethod(line) {
-		fmt.Fprintf(os.Stderr, "%s: Returning Target %s\n", name, tgt.URL)
 		return &tgt, nil
 	}
 	for sc.Scan() {
@@ -160,7 +156,6 @@ func TargetFromScanner(sc peekingScanner, body []byte, hdr http.Header, name str
 	if err := sc.Err(); err != nil {
 		return nil, ErrNoTargets
 	}
-	fmt.Fprintf(os.Stderr, "%s: Returning Target %s\n", name, tgt.URL)
 	return &tgt, nil
 }
 

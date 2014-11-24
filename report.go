@@ -48,6 +48,7 @@ func report(reporter, inputs, output string) error {
 		rep = hist
 	}
 
+	fmt.Fprintf(os.Stderr, "Inputs received: %s\n", inputs)
 	files := strings.Split(inputs, ",")
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {
