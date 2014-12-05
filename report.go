@@ -18,15 +18,16 @@ func reportCmd() command {
 	reporter := fs.String("reporter", "text", "Reporter [text, json, plot, hist[buckets]]")
 	inputs := fs.String("inputs", "stdin", "Input files (comma separated, or glob)")
 	output := fs.String("output", "stdout", "Output file")
+	filters := fs.String("filters", "", "One or more space-separated filters to operate on subsets of the inputs")
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
-		return report(*reporter, *inputs, *output)
+		return report(*reporter, *inputs, *output, *filters)
 	}}
 }
 
 // report validates the report arguments, sets up the required resources
 // and writes the report
-func report(reporter, inputs, output string) error {
+func report(reporter, inputs, output, filters string) error {
 	if len(reporter) < 4 {
 		return fmt.Errorf("bad reporter: %s", reporter)
 	}
@@ -70,7 +71,6 @@ func report(reporter, inputs, output string) error {
 		defer in.Close()
 		srcs[i] = in
 	}
-
 	out, err := file(output, true)
 	if err != nil {
 		return err
@@ -100,6 +100,9 @@ outer:
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "CMW Result count before: %d\n", len(results))
+	results = filterResults(results, filters)
+	fmt.Fprintf(os.Stderr, "CMW Result count after: %d\n", len(results))
 	sort.Sort(results)
 	data, err := rep.Report(results)
 	if err != nil {
@@ -107,4 +110,50 @@ outer:
 	}
 	_, err = out.Write(data)
 	return err
+}
+
+func filterResults(results vegeta.Results, filters string) vegeta.Results {
+	trimmed := strings.TrimSpace(filters)
+	if trimmed == "" {
+		return results
+	}
+	filterGroup := newFilterGroup(trimmed)
+	var filtered vegeta.Results
+	for _, result := range results {
+		if filterGroup.Matches(result) {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
+}
+
+type ResultFilterGroup struct {
+	filters []func(*vegeta.Result) bool
+}
+
+func newFilterGroup(filterSpecs string) ResultFilterGroup {
+	group := ResultFilterGroup{}
+	for _, filterSpec := range strings.Split(filterSpecs, " ") {
+		pieces := strings.Split(filterSpec, "=")
+		switch pieces[0] {
+		case "Method":
+			group.filters = append(group.filters, func(result *vegeta.Result) bool {
+				return result.Method == pieces[1]
+			})
+		case "URL":
+			group.filters = append(group.filters, func(result *vegeta.Result) bool {
+				return strings.Contains(result.URL, pieces[1])
+			})
+		}
+	}
+	return group
+}
+
+func (g *ResultFilterGroup) Matches(result *vegeta.Result) bool {
+	for _, filter := range g.filters {
+		if !filter(result) {
+			return false
+		}
+	}
+	return true
 }
