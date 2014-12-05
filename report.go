@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -15,7 +16,7 @@ import (
 func reportCmd() command {
 	fs := flag.NewFlagSet("vegeta report", flag.ExitOnError)
 	reporter := fs.String("reporter", "text", "Reporter [text, json, plot, hist[buckets]]")
-	inputs := fs.String("inputs", "stdin", "Input files (comma separated)")
+	inputs := fs.String("inputs", "stdin", "Input files (comma separated, or glob)")
 	output := fs.String("output", "stdout", "Output file")
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
@@ -48,8 +49,18 @@ func report(reporter, inputs, output string) error {
 		rep = hist
 	}
 
-	fmt.Fprintf(os.Stderr, "Inputs received: %s\n", inputs)
-	files := strings.Split(inputs, ",")
+	fmt.Fprintf(os.Stderr, "CMW - Inputs received: %s\n", inputs)
+	var (
+		err   error
+		files []string
+	)
+	if strings.Contains(inputs, "*") {
+		if files, err = filepath.Glob(inputs); err != nil {
+			panic(fmt.Sprintf("Bad glob %s: %s", inputs, err))
+		}
+	} else {
+		files = strings.Split(inputs, ",")
+	}
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {
 		in, err := file(f, false)
