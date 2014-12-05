@@ -15,14 +15,17 @@ POST /foo/bar/baz
 Header:Value
 Header-Two:Value
 @path/to/body
-
+POST /buzzer
+Header:Bees
+Header-Two:Honey
+@path/to/hive
 => PAUSE 12345
-
 HEAD /foos
 `
 	expected := []string{
 		"GET /foo/bar\nHeader:Value",
 		"POST /foo/bar/baz\nHeader:Value\nHeader-Two:Value\n@path/to/body",
+		"POST /buzzer\nHeader:Bees\nHeader-Two:Honey\n@path/to/hive",
 		"=> PAUSE 12345",
 		"HEAD /foos",
 	}

@@ -12,6 +12,7 @@ func main() {
 	commands := map[string]command{
 		"attack": attackCmd(),
 		"report": reportCmd(),
+		"scan":   scanCmd(),
 		"users":  usersCmd(),
 	}
 

@@ -1,6 +1,7 @@
 package vegeta
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"errors"
@@ -55,6 +56,42 @@ func TestTargetRequest(t *testing.T) {
 	}
 	if req.Host != want {
 		t.Fatalf("Target Host wasnt copied correctly. Want: %s, Got: %s", want, req.Host)
+	}
+}
+
+func TestTargetFromScanner(t *testing.T) {
+	src := []string{
+		"GET /foo/bar\nHeader:Value",
+		"POST /foo/bar/baz\nHeader:Value\n@../CHANGELOG",
+		"POST /buzzer\nHeader:Bees\nHeader-Two:Honey\n@../CHANGELOG",
+		"HEAD /foos",
+	}
+	singleHeader := http.Header{}
+	singleHeader.Add("Header", "Value")
+	doubleHeader := http.Header{}
+	doubleHeader.Add("Header", "Bees")
+	doubleHeader.Add("Header-Two", "Honey")
+	postBody, _ := ioutil.ReadFile("../CHANGELOG")
+
+	var emptyBody []byte
+	var emptyHeaders http.Header
+
+	wants := []*Target{
+		&Target{Method: "GET", URL: "/foo/bar", Header: singleHeader, Body: emptyBody},
+		&Target{Method: "POST", URL: "/foo/bar/baz", Header: singleHeader, Body: postBody},
+		&Target{Method: "POST", URL: "/buzzer", Header: doubleHeader, Body: postBody},
+		&Target{Method: "HEAD", URL: "/foos", Header: http.Header{}, Body: emptyBody},
+	}
+
+	for idx, text := range src {
+		want := wants[idx]
+		scanner := peekingScanner{src: bufio.NewScanner(strings.NewReader(text))}
+		got, err := TargetFromScanner(scanner, emptyBody, emptyHeaders, fmt.Sprintf("Item %d", idx))
+		if err != nil {
+			t.Fatal(err)
+		} else if !reflect.DeepEqual(want, got) {
+			t.Fatalf("want: %#v, got: %#v", want, got)
+		}
 	}
 }
 

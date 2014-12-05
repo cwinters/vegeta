@@ -13,6 +13,41 @@ import (
 	"github.com/tsenart/vegeta/lib"
 )
 
+type scanOpts struct {
+	scanf string
+}
+
+func scanCmd() command {
+	fs := flag.NewFlagSet("vegeta scan", flag.ExitOnError)
+	opts := &scanOpts{}
+	fs.StringVar(&opts.scanf, "file", "", "File to scan and check targets")
+	return command{fs, func(args []string) error {
+		fs.Parse(args)
+		return scan(opts)
+	}}
+}
+
+func scan(opts *scanOpts) error {
+	f, err := file(opts.scanf, false)
+	if err != nil {
+		return fmt.Errorf("Error opening file to scan: %s", err)
+	}
+
+	fmt.Println("CHUNKS")
+	for idx, chunk := range vegeta.ScanFileToChunks(f) {
+		fmt.Printf("%d:\n%s\n", idx, chunk)
+	}
+	f.Close()
+
+	fmt.Println("TARGETS")
+	f, _ = file(opts.scanf, false)
+	for idx, target := range vegeta.ScanFileToTargets(f) {
+		fmt.Printf("%d:\n  Method %s\n  URL %s\n", idx, target.Method, target.URL)
+	}
+	f.Close()
+	return nil
+}
+
 func usersCmd() command {
 	fs := flag.NewFlagSet("vegeta users", flag.ExitOnError)
 

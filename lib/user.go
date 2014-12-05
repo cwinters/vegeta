@@ -99,6 +99,25 @@ var (
 	commentCommand = regexp.MustCompile("^//")
 )
 
+func ScanFileToChunks(reader io.Reader) []string {
+	return ScanTargetsToChunks(peekingScanner{src: bufio.NewScanner(reader)})
+}
+
+func ScanFileToTargets(reader io.Reader) []*Target {
+	var targets []*Target
+	for idx, chunk := range ScanFileToChunks(reader) {
+		if !strings.Contains(chunk, "=> ") {
+			scanner := peekingScanner{src: bufio.NewScanner(strings.NewReader(chunk))}
+			target, err := TargetFromScanner(scanner, emptyBody, emptyHeaders, "Reader")
+			if err != nil {
+				panic(fmt.Errorf("Error reading item %d => %s\n%s", idx, err, chunk))
+			}
+			targets = append(targets, target)
+		}
+	}
+	return targets
+}
+
 // Given a file with:
 //   GET /foo/bar
 //   Header:Value
@@ -127,10 +146,10 @@ func ScanTargetsToChunks(sc peekingScanner) []string {
 		for {
 			next := sc.Peek()
 			if next == "" || commentCommand.MatchString(next) {
-				sc.Text() // gobble it up
+				sc.Text() // gobble it up and leave
 				break
 			} else if customCommand.MatchString(next) || httpMethod.MatchString(next) {
-				break
+				break // leave but keep the scanner at the line
 			} else {
 				sc.Scan()
 				current = append(current, sc.Text())
