@@ -9,9 +9,9 @@ func TestNewMetrics(t *testing.T) {
 	t.Parallel()
 
 	m := NewMetrics(Results{
-		&Result{500, time.Unix(0, 0), 100 * time.Millisecond, 10, 30, "Internal server error"},
-		&Result{200, time.Unix(1, 0), 20 * time.Millisecond, 20, 20, ""},
-		&Result{200, time.Unix(2, 0), 30 * time.Millisecond, 30, 10, ""},
+		&Result{500, time.Unix(0, 0), 100 * time.Millisecond, 10, 30, "Internal server error", "GET", "http://foo"},
+		&Result{200, time.Unix(1, 0), 20 * time.Millisecond, 20, 20, "", "GET", "http://foo"},
+		&Result{200, time.Unix(2, 0), 30 * time.Millisecond, 30, 10, "", "GET", "http://foo"},
 	})
 
 	for field, values := range map[string][]float64{
