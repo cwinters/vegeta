@@ -9,13 +9,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	vegeta "github.com/tsenart/vegeta/lib"
 )
 
 func reportCmd() command {
 	fs := flag.NewFlagSet("vegeta report", flag.ExitOnError)
-	reporter := fs.String("reporter", "text", "Reporter [text, json, plot, hist[buckets]]")
+	reporter := fs.String("reporter", "text", "Reporter [text, json, plot, dump, hist[buckets]]")
 	inputs := fs.String("inputs", "stdin", "Input files (comma separated, or glob)")
 	output := fs.String("output", "stdout", "Output file")
 	filters := fs.String("filters", "", "One or more space-separated filters to operate on subsets of the inputs")
@@ -39,6 +40,8 @@ func report(reporter, inputs, output, filters string) error {
 		rep = vegeta.ReportJSON
 	case "plot":
 		rep = vegeta.ReportPlot
+	case "dump":
+		rep = vegeta.ReportDump
 	case "hist":
 		if len(reporter) < 6 {
 			return fmt.Errorf("bad buckets: '%s'", reporter[4:])
@@ -50,7 +53,6 @@ func report(reporter, inputs, output, filters string) error {
 		rep = hist
 	}
 
-	fmt.Fprintf(os.Stderr, "CMW - Inputs received: %s\n", inputs)
 	var (
 		err   error
 		files []string
@@ -100,10 +102,9 @@ outer:
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "CMW Result count before: %d\n", len(results))
-	results = filterResults(results, filters)
-	fmt.Fprintf(os.Stderr, "CMW Result count after: %d\n", len(results))
 	sort.Sort(results)
+
+	results = filterResults(results, filters)
 	data, err := rep.Report(results)
 	if err != nil {
 		return err
@@ -117,7 +118,7 @@ func filterResults(results vegeta.Results, filters string) vegeta.Results {
 	if trimmed == "" {
 		return results
 	}
-	filterGroup := newFilterGroup(trimmed)
+	filterGroup := newFilterGroup(trimmed, results)
 	var filtered vegeta.Results
 	for _, result := range results {
 		if filterGroup.Matches(result) {
@@ -131,7 +132,7 @@ type ResultFilterGroup struct {
 	filters []func(*vegeta.Result) bool
 }
 
-func newFilterGroup(filterSpecs string) ResultFilterGroup {
+func newFilterGroup(filterSpecs string, results vegeta.Results) ResultFilterGroup {
 	group := ResultFilterGroup{}
 	for _, filterSpec := range strings.Split(filterSpecs, " ") {
 		pieces := strings.Split(filterSpec, "=")
@@ -143,6 +144,29 @@ func newFilterGroup(filterSpecs string) ResultFilterGroup {
 		case "URL":
 			group.filters = append(group.filters, func(result *vegeta.Result) bool {
 				return strings.Contains(result.URL, pieces[1])
+			})
+		// Examples:
+		//    Time=1m  => Include results from start to 1 minute after start
+		//    Time=-1m  => (same as above)
+		//    Time=+1m => Include results from 1 minute after start to end
+		case "Time":
+			durationText := pieces[1]
+			lookback := true
+			direction := durationText[0:1]
+			if direction == "-" || direction == "+" {
+				lookback = direction == "-"
+				durationText = durationText[1:]
+			}
+			duration, err := time.ParseDuration(durationText)
+			if err != nil {
+				panic(fmt.Errorf("Bad 'Time' filter specification: %s", err))
+			}
+			anchorTime := results[0].Timestamp.Add(duration)
+			group.filters = append(group.filters, func(result *vegeta.Result) bool {
+				if lookback {
+					return result.Timestamp.Before(anchorTime)
+				}
+				return result.Timestamp.After(anchorTime)
 			})
 		}
 	}

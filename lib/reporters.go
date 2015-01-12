@@ -111,6 +111,22 @@ var ReportJSON ReporterFunc = func(r Results) ([]byte, error) {
 	return json.Marshal(NewMetrics(r))
 }
 
+var ReportDump ReporterFunc = func(r Results) ([]byte, error) {
+	out := &bytes.Buffer{}
+	w := tabwriter.NewWriter(out, 0, 8, 2, '\t', tabwriter.StripEscape)
+	for idx, result := range r {
+		fmt.Fprintf(w, "%d\t%d\t%d\t%s\n", idx, result.Code,
+			int64(result.Latency/time.Millisecond), result.Method+" "+result.URL)
+	}
+
+	// TODO: Break down the Method + URLs into groups, calculate counts of status codes, times
+
+	if err := w.Flush(); err != nil {
+		return []byte{}, err
+	}
+	return out.Bytes(), nil
+}
+
 // ReportPlot builds up a self contained HTML page with an interactive plot
 // of the latencies of the requests. Built with http://dygraphs.com/
 var ReportPlot ReporterFunc = func(r Results) ([]byte, error) {
