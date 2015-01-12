@@ -31,10 +31,9 @@ attack command:
   -keepalive=true: Use persistent connections
   -laddr=0.0.0.0: Local IP address
   -lazy=false: Read targets lazily
-  -ordering="random": Attack ordering [sequential, random]
   -output="stdout": Output file
   -rate=50: Requests per second
-  -redirects=10: Number of redirects to follow
+  -redirects=10: Number of redirects to follow. -1 will not follow but marks as success
   -targets="stdin": Targets file
   -timeout=0: Requests timeout
   -workers=0: Number of workers
@@ -43,6 +42,11 @@ report command:
   -inputs="stdin": Input files (comma separated)
   -output="stdout": Output file
   -reporter="text": Reporter [text, json, plot, hist[buckets]]
+
+dump command:
+  -dumper="": Dumper [json, csv]
+  -inputs="stdin": Input files (comma separated)
+  -output="stdout": Output file
 
 global flags:
   -cpus=8 Number of CPUs to use
@@ -118,7 +122,8 @@ garbage collection, but overall it should stay very close to the specified.
 
 #### -redirects
 Specifies the max number of redirects followed on each request. The
-default is 10.
+default is 10. When the value is -1, redirects are not followed but
+the response is marked as successful.
 
 #### -targets
 Specifies the attack targets in a line separated file, defaulting to stdin.
@@ -170,12 +175,12 @@ means every single hit runs in its own worker.
 ```
 $ vegeta report -h
 Usage of vegeta report:
-  -input="stdin": Input files (comma separated)
+  -inputs="stdin": Input files (comma separated)
   -output="stdout": Output file
   -reporter="text": Reporter [text, json, plot, hist[buckets]]
 ```
 
-#### -input
+#### -inputs
 Specifies the input files to generate the report of, defaulting to stdin.
 These are the output of vegeta attack. You can specify more than one (comma
 separated) and they will be merged and sorted before being used by the
@@ -257,6 +262,32 @@ Bucket         #     %       Histogram
 [4ms,   6ms]   2117  11.51%  ########
 [6ms,   +Inf]  4771  25.93%  ###################
 ```
+
+### dump
+```
+$ vegeta dump -h
+Usage of vegeta dump:
+  -dumper="": Dumper [json, csv]
+  -inputs="stdin": Input files (comma separated)
+  -output="stdout": Output file
+```
+
+#### -inputs
+Specifies the input files containing attack results to be dumped. You can specify more than one (comma separated).
+
+#### -output
+Specifies the output file to which the dump will be written to.
+
+#### -dumper
+Specifies the dump format.
+
+##### json
+Dumps attack results as JSON objects.
+
+##### csv
+Dumps attack results as CSV records with six columns.
+The columns are: unix timestamp in ns since epoch, http status code,
+request latency in ns, bytes out, bytes in, and lastly the error.
 
 ## Usage (Library)
 ```go

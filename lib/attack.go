@@ -3,19 +3,20 @@ package vegeta
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Attacker is an attack executor which wraps an http.Client
 type Attacker struct {
-	dialer  *net.Dialer
-	client  http.Client
-	stop    chan struct{}
-	workers uint64
+	dialer    *net.Dialer
+	client    http.Client
+	stop      chan struct{}
+	workers   uint64
+	redirects int
 }
 
 var (
@@ -29,6 +30,9 @@ var (
 	DefaultLocalAddr = net.IPAddr{IP: net.IPv4zero}
 	// DefaultTLSConfig is the default tls.Config an Attacker uses.
 	DefaultTLSConfig = &tls.Config{InsecureSkipVerify: true}
+
+	// MarkRedirectsAsSuccess is the value when redirects are not followed but marked successful
+	NoFollow = -1
 )
 
 // NewAttacker returns a new Attacker with default options which are overridden
@@ -67,6 +71,7 @@ func Workers(n uint64) func(*Attacker) {
 // number of redirects an Attacker will follow.
 func Redirects(n int) func(*Attacker) {
 	return func(a *Attacker) {
+		a.redirects = n
 		a.client.CheckRedirect = func(_ *http.Request, via []*http.Request) error {
 			if len(via) > n {
 				return fmt.Errorf("stopped after %d redirects", n)
@@ -161,12 +166,20 @@ func (a *Attacker) Attack(tr Targeter, rate uint64, du time.Duration) chan *Resu
 func (a *Attacker) Stop() { close(a.stop) }
 
 func (a *Attacker) hit(tr Targeter, tm time.Time) *Result {
-	res := Result{Timestamp: tm}
-	defer func() { res.Latency = time.Since(tm) }()
+	var (
+		res = Result{Timestamp: tm}
+		err error
+	)
+
+	defer func() {
+		res.Latency = time.Since(tm)
+		if err != nil {
+			res.Error = err.Error()
+		}
+	}()
 
 	tgt, err := tr()
 	if err != nil {
-		res.Error = err.Error()
 		return &res
 	}
 	res.URL = tgt.URL
@@ -174,24 +187,29 @@ func (a *Attacker) hit(tr Targeter, tm time.Time) *Result {
 
 	req, err := tgt.Request()
 	if err != nil {
-		res.Error = err.Error()
 		return &res
 	}
 	r, err := a.client.Do(req)
 	if err != nil {
-		res.Error = err.Error()
+		// ignore redirect errors when the user set --redirects=NoFollow
+		if a.redirects == NoFollow && strings.Contains(err.Error(), "stopped after") {
+			err = nil
+		}
 		return &res
 	}
-	defer r.Body.Close()
+	r.Body.Close()
 
-	res.BytesOut = uint64(req.ContentLength)
-	res.Code = uint16(r.StatusCode)
-	if body, err := ioutil.ReadAll(r.Body); err != nil {
-		if res.Code < 200 || res.Code >= 400 {
-			res.Error = string(body)
-		}
-	} else {
-		res.BytesIn = uint64(len(body))
+	if req.ContentLength != -1 {
+		res.BytesOut = uint64(req.ContentLength)
 	}
+
+	if r.ContentLength != -1 {
+		res.BytesIn = uint64(r.ContentLength)
+	}
+
+	if res.Code = uint16(r.StatusCode); res.Code < 200 || res.Code >= 400 {
+		res.Error = r.Status
+	}
+
 	return &res
 }

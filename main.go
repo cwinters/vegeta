@@ -14,6 +14,7 @@ func main() {
 		"report": reportCmd(),
 		"scan":   scanCmd(),
 		"users":  usersCmd(),
+		"dump":   dumpCmd(),
 	}
 
 	flag.Usage = func() {
