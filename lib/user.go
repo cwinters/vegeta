@@ -185,12 +185,29 @@ func (user *User) process(results chan *Result) {
 				scanner := peekingScanner{src: bufio.NewScanner(strings.NewReader(chunk))}
 				return TargetFromScanner(scanner, emptyBody, emptyHeaders, user.Name)
 			}
-			timestamp := time.Now()
-			result := user.attacker.hit(targeter, timestamp)
-			fmt.Fprintf(os.Stderr, "%s: %s %s, %d ms\n",
-				label, result.Method, result.URL, int64(result.Latency/time.Millisecond))
-			results <- result
+
+			// retry a request if we get a 50(2|3|4), waiting 2xn seconds between each request
+			requests := 1
+			for {
+				timestamp := time.Now()
+				result := user.attacker.hit(targeter, timestamp)
+				fmt.Fprintf(os.Stderr, "%s: %d => %s %s, %d ms\n",
+					label, result.Code, result.Method, result.URL, int64(result.Latency/time.Millisecond))
+				results <- result
+				if requests <= 5 && retryable(result.Code) {
+					pauseSeconds := requests * 2
+					fmt.Fprintf(os.Stderr, "%s: Pausing for %d seconds until retry...\n", label, pauseSeconds)
+					time.Sleep(time.Duration(pauseSeconds*1000) * time.Millisecond)
+					requests = requests + 1
+				} else {
+					break
+				}
+			}
 		}
 	}
 	user.stopper <- struct{}{}
+}
+
+func retryable(code uint16) bool {
+	return code == 502 || code == 503 || code == 504
 }
