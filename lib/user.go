@@ -129,11 +129,14 @@ func ScanFileToTargets(reader io.Reader) []*Target {
 //
 //   => PAUSE 12345
 //
+///  => COMMENT - this line will be ignored
+//
 // Generate an array:
 // [
 //   "GET /foo/bar\nHeader:Value",
 //   "POST /foo/bar/baz\nHeader:Value\nHeader-Two:Value\n@path/to/body",
-//   "=> PAUSE 12345"
+//   "=> PAUSE 12345",
+//   "=> COMMENT - this line will be ignored"
 // ]
 func ScanTargetsToChunks(sc peekingScanner) []string {
 	var targets []string
@@ -161,6 +164,7 @@ func ScanTargetsToChunks(sc peekingScanner) []string {
 }
 
 var pauseChecker = regexp.MustCompile("^=> PAUSE (\\d+)$")
+var commentChecker = regexp.MustCompile("^=> COMMENT\\s*(.*)$")
 var emptyBody []byte
 var emptyHeaders http.Header
 
@@ -180,6 +184,8 @@ func (user *User) process(results chan *Result) {
 				return
 			case <-time.After(time.Duration(millis) * time.Millisecond):
 			}
+		} else if matches := commentChecker.FindStringSubmatch(chunk); matches != nil {
+			fmt.Fprintf(os.Stderr, "%s: COMMENT %s\n", label, matches[1])
 		} else {
 			targeter := func() (*Target, error) {
 				scanner := peekingScanner{src: bufio.NewScanner(strings.NewReader(chunk))}
